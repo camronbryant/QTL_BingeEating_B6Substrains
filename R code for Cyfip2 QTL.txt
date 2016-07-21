@@ -1,0 +1,313 @@
+library(qtl)
+library(XLConnect)
+##read in data
+foodCPPQTLchk <-read.cross(format=c("csv"), file="foodQTL.csv",na.strings=c("-"),
+                           genotypes=c("J","H","N"),alleles=c("J","N"),estimate.map=TRUE,
+                           convertXdata=TRUE, error.prob=0.0001)
+##summary of cross
+summary(foodCPPQTLchk)
+
+##calculate additional phenotypes
+#add R time and R tri time change for assessment days
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, 
+                                 D8.D1=(foodCPPQTLchk$pheno$D8.Right...time - foodCPPQTLchk$pheno$D1.Right...time))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno,
+                                 D15.D1=(foodCPPQTLchk$pheno$D15.Right...time - foodCPPQTLchk$pheno$D1.Right...time))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno,
+                                 D22.D1=(foodCPPQTLchk$pheno$D22.Right...time - foodCPPQTLchk$pheno$D1.Right...time))
+
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, 
+                                 D8.D1tri=(foodCPPQTLchk$pheno$D8.Food.1...time - foodCPPQTLchk$pheno$D1.Food.1...time))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno,
+                                 D15.D1tri=(foodCPPQTLchk$pheno$D15.Food.1...time - foodCPPQTLchk$pheno$D1.Food.1...time))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno,
+                                 D22.D1tri=(foodCPPQTLchk$pheno$D22.Food.1...time - foodCPPQTLchk$pheno$D1.Food.1...time))
+
+#add prct body weight consumed
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD2 = (foodCPPQTLchk$pheno$D2.consumed/foodCPPQTLchk$pheno$wt.D2*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD4 = (foodCPPQTLchk$pheno$D4.consumed/foodCPPQTLchk$pheno$wt.D4*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD9 = (foodCPPQTLchk$pheno$D9.consumed/foodCPPQTLchk$pheno$wt.D9*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD11 = (foodCPPQTLchk$pheno$D11.consumed/foodCPPQTLchk$pheno$wt.D11*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD16 = (foodCPPQTLchk$pheno$D16.consumed/foodCPPQTLchk$pheno$wt.D16*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD18 = (foodCPPQTLchk$pheno$D18.consumed/foodCPPQTLchk$pheno$wt.D18*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctD23 = (foodCPPQTLchk$pheno$D23.consumed/foodCPPQTLchk$pheno$wt.D23*100))
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, totalsumprct=(prctD2+prctD4+prctD9+prctD11+
+                                                                      prctD16+prctD18+prctD23))
+
+#add %open arm time for EPM
+foodCPPQTLchk$pheno <- transform(foodCPPQTLchk$pheno, prctopnarm = 
+                                   (foodCPPQTLchk$pheno$Open...time/(foodCPPQTLchk$pheno$Open...time+foodCPPQTLchk$pheno$Closed...time))*100)
+##choose phenotypes for mapping
+foodCPPQTLchk$pheno<-foodCPPQTLchk$pheno[,c('Mouse.ID','sex','pgm','D8.D1',
+'D15.D1','D22.D1','D8.D1tri','D15.D1tri','D22.D1tri','prctD2','prctD4',
+'prctD9','prctD11','prctD16','prctD18','prctD23','totalsumprct','prctopnarm')]
+
+#narrowed down to final consumption phenotypes for simplicity
+foodCPPQTLchk$pheno<-foodCPPQTLchk$pheno[,c('Mouse.ID','sex','pgm','prctD2',
+'prctD4','prctD9','prctD11','prctD16','prctD18','prctD23','totalsumprct')]
+
+
+##qtl mapping
+#calculate conditional genotype probabilities
+foodCPPQTLchk <- calc.genoprob(foodCPPQTLchk,step=1)
+##interval mapping, haley-knott
+foodCPPQTLchk.hk <- scanone(foodCPPQTLchk, method='hk', pheno.col=c(4:11))
+
+#do permutations to calculate LOD scores
+foodCPPQTLchk.perm <- scanone(foodCPPQTLchk, pheno.col=c(4:11), n.perm=1000, method='hk', perm.Xsp=TRUE)
+
+
+##look at LOD score tables
+#peaks for all phenotypes
+allpheno<-summary(foodCPPQTLchk.hk, threshold=2,format="allpheno")
+writeWorksheetToFile(allpheno,file="foodQTL.xlsx",sheet="allpheno")
+
+#highest peak per chromosome
+allpeaks<-summary(foodCPPQTLchk.hk, threshold=2,format="allpeaks")
+writeWorksheetToFile(allpeaks,file="foodQTL.xlsx",sheet="allpeaks")
+
+
+##make QTL plots
+#genomwide, consumption phenotype
+pdf("genomewide.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchk.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD",xlab="Chromosome",ylim=c(0,8),yaxt="n")
+axis(2,cex.axis=2)
+add.threshold(foodCPPQTLchk.hk, perms=foodCPPQTLchk.perm, alpha=0.05)
+dev.off()
+
+#chromosome 11 plot, consumption phenotype
+pdf("ch.11.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchk.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD score",xlab="Chr 11 (cM)",ylim=c(0,8),ch=11)
+add.threshold(foodCPPQTLchk.hk, perms=foodCPPQTLchk.perm, alpha=0.05)
+dev.off()
+
+#all training days on one plot
+pdf("ch.11.food.days.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchk.hk, lodcolumn=1:3,ch=11, col=c("red", "orange","yellow"), 
+     ylab='LOD score', xlab='Chr 11 (cM)',ylim=c(0,8),main="PF consumed (% BW)")
+plot(foodCPPQTLchk.hk, lodcolumn=4:6, ch=11, col=c("green","sky blue","blue"),
+     ylab='LOD score', add=TRUE)
+plot(foodCPPQTLchk.hk, lodcolumn=7, ch=11, col=c("purple"),
+     ylab='LOD score', add=TRUE)
+#most stringent (highest) threshold
+add.threshold(foodCPPQTLchk.hk, perms=foodCPPQTLchk.perm, alpha=0.05, lodcolumn=1)
+#add legend
+box(lwd=1)
+foodplotclrs<-c("red", "orange","yellow","green","sky blue","blue","purple")
+legend("topright", yjust=.01, xjust=.000000001, inset=.01 ,c("D2","D4","D9",
+"D11","D16","D18","D23"),
+       fill=foodplotclrs,bty="n", cex=1.5)
+dev.off()
+
+#LOD support interval for consumption phenotype
+lodint(foodCPPQTLchk.hk,11,1.5,expandtomarkers=TRUE)
+
+
+##qtl mapping by sex
+#subset females
+foodCPPQTLchkF<-subset(foodCPPQTLchk,ind=c(foodCPPQTLchk$pheno$sex=='F'))
+
+##qtl mapping for females
+#calculate conditional genotype probabilities
+foodCPPQTLchkF <- calc.genoprob(foodCPPQTLchkF,step=1)
+##interval mapping, haley-knott
+foodCPPQTLchkF.hk <- scanone(foodCPPQTLchkF, method='hk', pheno.col=c(4:11))
+
+#do permutations to calculate LOD scores
+foodCPPQTLchkF.perm <- scanone(foodCPPQTLchkF, pheno.col=c(4:11), n.perm=1000, method='hk', perm.Xsp=TRUE)
+
+##look at LOD score tables for females only
+#peaks for all phenotypes
+allphenoF<-summary(foodCPPQTLchkF.hk, threshold=2,format="allpheno")
+writeWorksheetToFile(allphenoF,file="foodQTL.xlsx",sheet="allphenoF")
+
+#highest peak per chromosome
+allpeaksF<-summary(foodCPPQTLchkF.hk, threshold=2,format="allpeaks")
+writeWorksheetToFile(allpeaksF,file="foodQTL.xlsx",sheet="allpeaksF")
+
+##make QTL plots for females
+#genomwide, consumption phenotype
+pdf("genomewideF.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkF.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD",xlab="Chromosome",ylim=c(0,8),yaxt="n")
+axis(2,cex.axis=2)
+add.threshold(foodCPPQTLchkF.hk, perms=foodCPPQTLchkF.perm, alpha=0.05)
+dev.off()
+
+#chromosome 11 plot, consumption phenotype
+pdf("ch.11F.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkF.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD score",xlab="Chr 11 (cM)",ylim=c(0,8),ch=11)
+add.threshold(foodCPPQTLchkF.hk, perms=foodCPPQTLchkF.perm, alpha=0.05)
+dev.off()
+
+#all training days on one plot
+pdf("ch.11.food.daysF.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkF.hk, lodcolumn=1:3,ch=11, col=c("red", "orange","yellow"), 
+     ylab='LOD score', xlab='Chr 11 (cM)',ylim=c(0,8),main="PF consumed (% BW)")
+plot(foodCPPQTLchkF.hk, lodcolumn=4:6, ch=11, col=c("green","sky blue","blue"),
+     ylab='LOD score', add=TRUE)
+plot(foodCPPQTLchkF.hk, lodcolumn=7, ch=11, col=c("purple"),
+     ylab='LOD score', add=TRUE)
+#most stringent (highest) threshold
+add.threshold(foodCPPQTLchkF.hk, perms=foodCPPQTLchkF.perm, alpha=0.05, lodcolumn=1)
+#add legend
+box(lwd=1)
+foodplotclrs<-c("red", "orange","yellow","green","sky blue","blue","purple")
+legend("topright", yjust=.01, xjust=.000000001, inset=.01 ,c("D2","D4","D9",
+                                                             "D11","D16","D18","D23"),
+       fill=foodplotclrs,bty="n", cex=1.5)
+dev.off()
+
+#LOD support interval for consumption phenotype
+lodint(foodCPPQTLchkF.hk,11,1.5,expandtomarkers=TRUE)
+
+##qtl mapping by sex
+#subset males
+foodCPPQTLchkM<-subset(foodCPPQTLchk,ind=c(foodCPPQTLchk$pheno$sex=='M'))
+
+##qtl mapping for males
+#calculate conditional genotype probabilities
+foodCPPQTLchkM <- calc.genoprob(foodCPPQTLchkM,step=1)
+##interval mapping, haley-knott
+foodCPPQTLchkM.hk <- scanone(foodCPPQTLchkM, method='hk', pheno.col=c(4:11))
+
+#do permutations to calculate LOD scores
+foodCPPQTLchkM.perm <- scanone(foodCPPQTLchkM, pheno.col=c(4:11), n.perm=1000, method='hk', perm.Xsp=TRUE)
+
+
+##look at LOD score tables for males only
+#peaks for all phenotypes
+allphenoM<-summary(foodCPPQTLchkM.hk, threshold=2,format="allpheno")
+writeWorksheetToFile(allphenoM,file="foodQTL.xlsx",sheet="allphenoM")
+
+#highest peak per chromosome
+allpeaksM<-summary(foodCPPQTLchkM.hk, threshold=2,format="allpeaks")
+writeWorksheetToFile(allpeaksM,file="foodQTL.xlsx",sheet="allpeaksM")
+
+##make QTL plots for males
+#genomwide, consumption phenotype
+pdf("genomewideM.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkM.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD",xlab="Chromosome",ylim=c(0,8),yaxt="n")
+axis(2,cex.axis=2)
+add.threshold(foodCPPQTLchkM.hk, perms=foodCPPQTLchkM.perm, alpha=0.05)
+dev.off()
+
+#chromosome 11 plot, consumption phenotype
+pdf("ch.11M.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkM.hk, lodcolumn=8, main="Summed PF Consumed (%BW)",
+     ylab="LOD score",xlab="Chr 11 (cM)",ylim=c(0,8),ch=11)
+add.threshold(foodCPPQTLchkM.hk, perms=foodCPPQTLchkM.perm, alpha=0.05)
+dev.off()
+
+#all training days on one plot
+pdf("ch.11.food.daysM.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchkM.hk, lodcolumn=1:3,ch=11, col=c("red", "orange","yellow"), 
+     ylab='LOD score', xlab='Chr 11 (cM)',ylim=c(0,8),main="PF consumed (% BW)")
+plot(foodCPPQTLchkM.hk, lodcolumn=4:6, ch=11, col=c("green","sky blue","blue"),
+     ylab='LOD score', add=TRUE)
+plot(foodCPPQTLchkM.hk, lodcolumn=7, ch=11, col=c("purple"),
+     ylab='LOD score', add=TRUE)
+#most stringent (highest) threshold
+add.threshold(foodCPPQTLchkM.hk, perms=foodCPPQTLchkM.perm, alpha=0.05, lodcolumn=1)
+#add legend
+box(lwd=1)
+foodplotclrs<-c("red", "orange","yellow","green","sky blue","blue","purple")
+legend("topright", yjust=.01, xjust=.000000001, inset=.01 ,c("D2","D4","D9",
+                                                             "D11","D16","D18","D23"),
+       fill=foodplotclrs,bty="n", cex=1.5)
+dev.off()
+
+#LOD support interval for consumption phenotype
+lodint(foodCPPQTLchkM.hk,11,1.5,expandtomarkers=TRUE)
+
+##plots with M and F separate
+#genomwide plot, consumption phenotype, combined with M and F
+pdf("genomewide.M.F.pdf")
+par(font.lab=1,font.main=1,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchk.hk, lodcolumn=8,ylim=c(0,8),yaxt="n",xaxt="n",
+     xlab="Chromosome",ylab="LOD",main="Summed PF Consumed (%BW)")
+axis(2,las=2,cex.axis=3)
+plot(foodCPPQTLchkF.hk, lodcolumn=8,add=TRUE,col="red")
+plot(foodCPPQTLchkM.hk, lodcolumn=8,add=TRUE,col="blue")
+add.threshold(foodCPPQTLchk.hk, perms=foodCPPQTLchk.perm,
+              alpha=0.05)
+#add legend
+box(lwd=1)
+foodplotclrs<-c("black", "red","blue")
+legend("topleft", yjust=.01, xjust=.000000001, 
+       inset=.01 ,c("Females and Males","Females","Males"),
+       fill=foodplotclrs,bty="n", cex=2)
+dev.off()
+
+
+#ch 11 plot, consumption phenotype, combined with M and F
+pdf("ch.11.M.F.pdf")
+par(cex=0.7, cex.axis=1.2, cex.lab=2, cex.main=2,
+    mar=c(7, 11, 4.1,1.1),mgp=c(4,1,0),lwd=3)
+plot(foodCPPQTLchk.hk, lodcolumn=8,main="Summed PF Consumed (%BW)",
+     ylab="LOD",xlab="Chromosome",ylim=c(0,8),yaxt="n",ch=11)
+axis(2,las=2,cex.axis=3)
+plot(foodCPPQTLchkF.hk, lodcolumn=8,add=TRUE,col="red",ch=11)
+plot(foodCPPQTLchkM.hk, lodcolumn=8,add=TRUE,col="blue",ch=11)
+add.threshold(foodCPPQTLchk.hk, perms=foodCPPQTLchk.perm,
+              alpha=0.05)
+
+#add legend
+box(lwd=1)
+foodplotclrs<-c("black", "red","blue")
+legend("topright", yjust=.01, xjust=.000000001, 
+       inset=.01 ,c("Females and Males","Females","Males"),
+       fill=foodplotclrs,bty="n", cex=1.5)
+dev.off()
+
+
+
+##fitqtl to determine total variance
+foodCPPQTLchk<-sim.geno(foodCPPQTLchk,step=2,error=0.001)
+qtl<-makeqtl(foodCPPQTLchk,chr=11, pos=23.3)
+ch11qtl<-summary(fitqtl(foodCPPQTLchk, qtl=qtl, formula=y~Q1,pheno.col=8))
+capture.output(summary(ch11qtl),file="test.doc")
+
+##missing genotype info for all F2s
+allF2<-read.csv(file="all.F2.genotypes.csv",header = TRUE,sep=",")
+
+
+missingM<-function(x){
+  
+  y=sum(x=='-')
+  z=y/812
+  print(z)
+  
+}
+
+prctmissing<- sapply(allF2[,2:97], function(x) 
+  missingM(x=x))
+
+hist(prctmissing,main="SNP marker missingness",xlab="% missing",ylab="# of markers")
+missing=prctmissing[prctmissing>.2]
+
+
+
